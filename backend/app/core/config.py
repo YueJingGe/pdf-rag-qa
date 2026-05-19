@@ -5,10 +5,15 @@ from pathlib import Path
 
 
 class Settings(BaseSettings):
-    # LLM
+    # LLM (RAG)
     deepseek_api_key: str = ""
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-chat"
+
+    # LLM (Plain Chat - GLM-4V-Flash, free multimodal from Zhipu AI)
+    chat_api_key: str = ""
+    chat_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
+    chat_model: str = "glm-4v-flash"
 
     # Embedding
     embedding_provider: str = "dashscope"  # "dashscope" or "huggingface"

@@ -22,6 +22,7 @@ class ChatRequest(BaseModel):
     question: str
     conversation_id: int | None = None
     use_hyde: bool = False
+    images: list[str] | None = None  # base64 data URIs or image URLs for multimodal chat
 
 
 class ConversationResponse(BaseModel):
@@ -81,8 +82,8 @@ async def chat_stream(req: ChatRequest, db: AsyncSession = Depends(get_db)):
         })}
 
         if is_plain_chat:
-            # Plain chat mode: call LLM directly without RAG 直接调用 LLM 不走 RAG 检索链
-            async for chunk in plain_chat_stream(req.question, chat_history):
+            # Plain chat mode: Gemini 2.0 Flash (free multimodal) 直接调用 LLM 不走 RAG 检索链
+            async for chunk in plain_chat_stream(req.question, chat_history, images=req.images):
                 if chunk["type"] == "token":
                     full_answer += chunk["content"]
                     yield {"event": "token", "data": json.dumps({"content": chunk["content"]})}

@@ -150,10 +150,12 @@ DeepSeek API 流式生成 → SSE 推送到前端
 ## 功能清单
 
 ### 用户认证
+
 - **注册 / 登录**：JWT Token 认证，支持 Bearer Token 鉴权
 - **RBAC 权限**：owner / member / viewer 三级角色控制
 
 ### 智能问答
+
 - **多轮对话**：自动管理对话历史，Prompt 注入最近 5 轮上下文
 - **普通聊天**：不依赖知识库的通用对话能力
 - **知识库问答**：基于上传文档的精准检索增强生成
@@ -163,16 +165,19 @@ DeepSeek API 流式生成 → SSE 推送到前端
 - **会话持久化**：刷新页面保留当前知识库和对话（localStorage）
 
 ### 文档管理
+
 - **多格式支持**：PDF / DOCX / TXT / Markdown
 - **扫描件 OCR**：pytesseract + pdf2image 本地识别（不消耗 token）
 - **加密 PDF**：支持解密后解析（依赖 cryptography 包）
 - **文档操作**：上传 / 重命名 / 删除，实时状态反馈（就绪/上传中/失败）
 
 ### 知识库管理
+
 - 知识库 CRUD（新增 / 重命名 / 删除）
 - 每个知识库独立 FAISS 索引，数据隔离
 
 ### 可观测性
+
 - **Langfuse 追踪**：全链路请求追踪，检索效果可视化
 - **RAGAS 评估**：离线评估检索质量和生成质量
 
@@ -318,19 +323,21 @@ python scripts/run_ragas_eval.py <kb_id> [qa_pairs.json]
 
 系统支持两种嵌入方案，在 `.env` 中配置切换：
 
-| 方案 | 模型 | 优缺点 |
-|------|------|--------|
+| 方案 | 模型                   | 优缺点                                |
+| ---- | ---------------------- | ------------------------------------- |
 | 本地 | BAAI/bge-small-zh-v1.5 | ✅ 免费无限调用 ❌ 首次加载需下载模型 |
-| API  | text-embedding-v3 | ✅ 效果略优 ❌ 按 token 计费 |
+| API  | text-embedding-v3      | ✅ 效果略优 ❌ 按 token 计费          |
 
 ### Token 消耗说明
 
 每次 RAG 问答约消耗 **2000-4000 tokens**，主要构成：
+
 - System Prompt: ~200 tokens
 - 检索上下文（top_k chunks）: ~1500-3000 tokens
 - 用户问题 + 历史对话: ~300-800 tokens
 
 **节省建议**：
+
 - 开启语义缓存，相似问题直接返回缓存结果
 - 适当减小 `CHUNK_SIZE` 和 `TOP_K` 参数
 - 普通聊天不走 RAG 链，直接调用 LLM
@@ -339,13 +346,14 @@ python scripts/run_ragas_eval.py <kb_id> [qa_pairs.json]
 
 运行时产生的数据存储在 `backend/data/` 目录下（不提交到 Git）：
 
-| 文件/目录 | 说明 | 丢失影响 |
-|-----------|------|----------|
-| `data/db.sqlite3` | SQLite 数据库（用户、知识库、对话、文档元数据） | 所有业务数据丢失 |
-| `data/faiss_indexes/` | FAISS 向量索引文件 | 需重新上传文档重建索引 |
-| `data/uploads/` | 用户上传的原始文档 | 无法查看原文和重建索引 |
+| 文件/目录             | 说明                                            | 丢失影响               |
+| --------------------- | ----------------------------------------------- | ---------------------- |
+| `data/db.sqlite3`     | SQLite 数据库（用户、知识库、对话、文档元数据） | 所有业务数据丢失       |
+| `data/faiss_indexes/` | FAISS 向量索引文件                              | 需重新上传文档重建索引 |
+| `data/uploads/`       | 用户上传的原始文档                              | 无法查看原文和重建索引 |
 
 **数据何时会丢失？**
+
 - 手动删除 `backend/data/` 目录
 - 重装系统且未备份该目录
 - Docker 容器删除且未挂载持久化卷
@@ -419,6 +427,7 @@ EMBEDDING_MODEL=text-embedding-v3
 ### 自定义 Prompt
 
 编辑 `backend/app/core/rag_chain.py` 中的 `SYSTEM_TEMPLATE` 变量，可自定义：
+
 - 回答风格（简洁/详细/学术）
 - 引用格式要求
 - 拒答策略（无相关信息时的行为）

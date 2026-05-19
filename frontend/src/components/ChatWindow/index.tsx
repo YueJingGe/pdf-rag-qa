@@ -24,6 +24,9 @@ import {
   PlusOutlined,
   HistoryOutlined,
   DeleteOutlined,
+  PictureOutlined,
+  CloseCircleFilled,
+  CopyOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import ReactMarkdown from "react-markdown";
@@ -85,13 +88,16 @@ export default function ChatWindow({
   const [showDebug, setShowDebug] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [conversations, setConversations] = useState<ConversationInfo[]>([]);
+  const [pendingImages, setPendingImages] = useState<string[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sse = useSSE();
 
+  const effectiveKbId = knowledgeBaseId ?? 0; // 普通聊天用 0 作为 kb_id
+
   const loadConversations = async () => {
-    if (!knowledgeBaseId) return;
     try {
-      const { data } = await chatApi.listConversations(knowledgeBaseId);
+      const { data } = await chatApi.listConversations(effectiveKbId);
       setConversations(data);
     } catch {
       /* ignore */
@@ -131,24 +137,23 @@ export default function ChatWindow({
 
   // Persist conversationId to localStorage
   useEffect(() => {
-    if (sse.conversationId && knowledgeBaseId) {
-      localStorage.setItem(`conv_${knowledgeBaseId}`, String(sse.conversationId));
+    if (sse.conversationId) {
+      localStorage.setItem(`conv_${effectiveKbId}`, String(sse.conversationId));
     }
-  }, [sse.conversationId, knowledgeBaseId]);
+  }, [sse.conversationId, effectiveKbId]);
 
   useEffect(() => {
     setMessages([]);
     setConversations([]);
-    if (!knowledgeBaseId) return;
 
     const loadHistory = async () => {
       setHistoryLoading(true);
       try {
-        const { data: convs } = await chatApi.listConversations(knowledgeBaseId);
+        const { data: convs } = await chatApi.listConversations(effectiveKbId);
         setConversations(convs);
 
         // Try to restore the last conversation for this KB
-        const savedConvId = localStorage.getItem(`conv_${knowledgeBaseId}`);
+        const savedConvId = localStorage.getItem(`conv_${effectiveKbId}`);
         const targetConvId = savedConvId ? Number(savedConvId) : (convs.length > 0 ? convs[0].id : null);
         const targetConv = targetConvId ? convs.find((c) => c.id === targetConvId) : null;
 
@@ -178,19 +183,59 @@ export default function ChatWindow({
       }
     };
     loadHistory();
-  }, [knowledgeBaseId]);
+  }, [effectiveKbId]);
+
+  const handleImageSelect = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith("image/")) {
+        message.warning("仅支持图片文件");
+        return;
+      }
+      if (file.size > 10 * 1024 * 1024) {
+        message.warning("图片大小不能超过 10MB");
+        return;
+      }
+      const reader = new FileReader();
+      reader.onload = () => {
+        const dataUri = reader.result as string;
+        setPendingImages((prev) => [...prev, dataUri]);
+      };
+      reader.readAsDataURL(file);
+    });
+    // Reset input so same file can be selected again
+    e.target.value = "";
+  };
+
+  const removePendingImage = (index: number) => {
+    setPendingImages((prev) => prev.filter((_, i) => i !== index));
+  };
 
   const handleSend = async () => {
     const question = inputValue.trim();
     if (!question || sse.loading) return;
 
+    const imagesToSend = [...pendingImages];
     setInputValue("");
-    setMessages((prev) => [...prev, { role: "user", content: question }]);
+    setPendingImages([]);
+
+    const userContent = imagesToSend.length > 0
+      ? `${question}\n[附带 ${imagesToSend.length} 张图片]`
+      : question;
+    setMessages((prev) => [...prev, { role: "user", content: userContent }]);
+
     await sse.send({
       knowledgeBaseId: knowledgeBaseId ?? null,
       question,
       conversationId: sse.conversationId ?? undefined,
       useHyde,
+      images: imagesToSend.length > 0 ? imagesToSend : undefined,
     });
   };
 
@@ -359,24 +404,43 @@ export default function ChatWindow({
             />
             <div className={styles.bubble}>
               {msg.role === "assistant" ? (
-                <div className={styles.markdownContent}>
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {msg.content}
-                  </ReactMarkdown>
-                </div>
+                <>
+                  <div className={styles.markdownContent}>
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {msg.content}
+                    </ReactMarkdown>
+                  </div>
+                  {msg.citations && <CitationView citations={msg.citations} onCitationClick={onCitationClick} />}
+                  {showDebug && msg.retrievalDebug && (
+                    <RetrievalDebugPanel
+                      debug={msg.retrievalDebug}
+                      knowledgeBaseId={knowledgeBaseId!}
+                      question={messages[index - 1]?.content || ""}
+                      messageId={index}
+                    />
+                  )}
+                  <div className={styles.assistantFooter}>
+                    <Typography.Text type="secondary" className={styles.aiDisclaimer}>
+                      本回答由 AI 生成，内容仅供参考，请仔细甄别。
+                    </Typography.Text>
+                    <Tooltip title="复制回答">
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<CopyOutlined />}
+                        className={styles.copyBtn}
+                        onClick={() => {
+                          navigator.clipboard.writeText(msg.content);
+                          message.success("已复制到剪贴板");
+                        }}
+                      />
+                    </Tooltip>
+                  </div>
+                </>
               ) : (
                 <Typography.Text style={{ whiteSpace: "pre-wrap" }}>
                   {msg.content}
                 </Typography.Text>
-              )}
-              {msg.citations && <CitationView citations={msg.citations} onCitationClick={onCitationClick} />}
-              {showDebug && msg.retrievalDebug && (
-                <RetrievalDebugPanel
-                  debug={msg.retrievalDebug}
-                  knowledgeBaseId={knowledgeBaseId!}
-                  question={messages[index - 1]?.content || ""}
-                  messageId={index}
-                />
               )}
             </div>
           </div>
@@ -406,34 +470,69 @@ export default function ChatWindow({
       </div>
 
       <div className={styles.inputArea}>
-        <Input.TextArea
-          value={inputValue}
-          onChange={(e) => setInputValue(e.target.value)}
-          onPressEnter={(e) => {
-            if (!e.shiftKey) {
-              e.preventDefault();
-              handleSend();
-            }
-          }}
-          placeholder="输入您的问题，按 Enter 发送，Shift+Enter 换行..."
-          autoSize={{ minRows: 3, maxRows: 6 }}
-          disabled={sse.loading}
-          className={styles.input}
-        />
-        {sse.loading ? (
-          <Button icon={<StopOutlined />} onClick={sse.abort} danger>
-            停止
-          </Button>
-        ) : (
-          <Button
-            type="primary"
-            icon={<SendOutlined />}
-            onClick={handleSend}
-            disabled={!inputValue.trim()}
-          >
-            发送
-          </Button>
+        {/* Image preview strip */}
+        {pendingImages.length > 0 && (
+          <div className={styles.imagePreviewStrip}>
+            {pendingImages.map((img, idx) => (
+              <div key={idx} className={styles.imagePreviewItem}>
+                <img src={img} alt={`preview-${idx}`} />
+                <CloseCircleFilled
+                  className={styles.imageRemoveBtn}
+                  onClick={() => removePendingImage(idx)}
+                />
+              </div>
+            ))}
+          </div>
         )}
+        <div className={styles.inputRow}>
+          <Input.TextArea
+            value={inputValue}
+            onChange={(e) => setInputValue(e.target.value)}
+            onPressEnter={(e) => {
+              if (!e.shiftKey) {
+                e.preventDefault();
+                handleSend();
+              }
+            }}
+            placeholder={isPlainChat ? "输入问题，可附带图片进行多模态对话..." : "输入您的问题，按 Enter 发送，Shift+Enter 换行..."}
+            autoSize={{ minRows: 3, maxRows: 6 }}
+            disabled={sse.loading}
+            className={styles.input}
+          />
+          <div className={styles.inputActions}>
+            {isPlainChat && (
+              <Tooltip title="上传图片（支持多张）">
+                <Button
+                  icon={<PictureOutlined />}
+                  onClick={handleImageSelect}
+                  disabled={sse.loading}
+                />
+              </Tooltip>
+            )}
+            {sse.loading ? (
+              <Button icon={<StopOutlined />} onClick={sse.abort} danger>
+                停止
+              </Button>
+            ) : (
+              <Button
+                type="primary"
+                icon={<SendOutlined />}
+                onClick={handleSend}
+                disabled={!inputValue.trim()}
+              >
+                发送
+              </Button>
+            )}
+          </div>
+        </div>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          multiple
+          style={{ display: "none" }}
+          onChange={handleFileChange}
+        />
       </div>
     </div>
   );

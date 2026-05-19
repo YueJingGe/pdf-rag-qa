@@ -15,6 +15,7 @@ interface SendOptions {
   question: string;
   conversationId?: number;
   useHyde?: boolean;
+  images?: string[];  // base64 data URIs for multimodal chat
 }
 
 export function useSSE() {
@@ -29,7 +30,7 @@ export function useSSE() {
   const abortRef = useRef<AbortController | null>(null);
 
   const send = useCallback(async (options: SendOptions) => {
-    const { knowledgeBaseId, question, conversationId, useHyde = false } = options;
+    const { knowledgeBaseId, question, conversationId, useHyde = false, images } = options;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -44,15 +45,20 @@ export function useSSE() {
       const headers: Record<string, string> = { 'Content-Type': 'application/json' };
       if (token) headers['Authorization'] = `Bearer ${token}`;
 
+      const body: Record<string, unknown> = {
+        knowledge_base_id: knowledgeBaseId || null,
+        question,
+        conversation_id: conversationId ?? null,
+        use_hyde: useHyde,
+      };
+      if (images && images.length > 0) {
+        body.images = images;
+      }
+
       const response = await fetch('/api/chat/stream', {
         method: 'POST',
         headers,
-        body: JSON.stringify({
-          knowledge_base_id: knowledgeBaseId || null, // 支持不使用知识库
-          question,
-          conversation_id: conversationId ?? null,
-          use_hyde: useHyde,
-        }),
+        body: JSON.stringify(body),
         signal: controller.signal,
       });
 
@@ -108,6 +114,7 @@ export function useSSE() {
                 setState((prev) => ({ ...prev, retrievalDebug: data }));
                 break;
               case 'done':
+                setState((prev) => ({ ...prev, loading: false }));
                 break;
               default:
                 if (data.content && typeof data.content === 'string' && !data.citations) {

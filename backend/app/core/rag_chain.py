@@ -446,39 +446,67 @@ async def rag_stream(
     yield {"type": "done", "content": full_answer}
 
 
-# ======================== Plain Chat (no RAG) ========================
+# ======================== Plain Chat (GLM-4V-Flash - Free Multimodal from Zhipu AI) ========================
 
 PLAIN_CHAT_SYSTEM_PROMPT = """你是一个智能AI助手，请用简洁、准确、友好的方式回答用户问题。
-使用Markdown格式化回复：标题分隔主题、列表展示要点、**加粗**关键信息。"""
+使用Markdown格式化回复：标题分隔主题、列表展示要点、**加粗**关键信息。
+如果用户发送了图片，请仔细观察图片内容并结合用户问题进行回答。"""
 
-PLAIN_CHAT_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", PLAIN_CHAT_SYSTEM_PROMPT),
-    MessagesPlaceholder(variable_name="chat_history"),
-    ("human", "{question}"),
-])
+
+def _get_chat_llm(streaming: bool = False) -> ChatOpenAI:
+    """Get GLM-4V-Flash LLM instance for plain chat (free multimodal from Zhipu AI)."""
+    if not settings.chat_api_key:
+        # Fallback to DeepSeek if chat model is not configured
+        logger.warning("CHAT_API_KEY not configured, falling back to DeepSeek for plain chat")
+        return _get_llm(streaming=streaming)
+    return ChatOpenAI(
+        model=settings.chat_model,
+        openai_api_key=settings.chat_api_key,
+        openai_api_base=settings.chat_base_url,
+        temperature=0.7,
+        streaming=streaming,
+    )
 
 
 async def plain_chat_stream(
     question: str,
     chat_history: list[dict] | None = None,
+    images: list[str] | None = None,
 ) -> AsyncIterator[dict]:
-    """Streaming plain chat without RAG, directly calls LLM."""
+    """Streaming plain chat using Gemini 2.0 Flash (free multimodal).
+
+    Args:
+        question: User's text question.
+        chat_history: Previous conversation messages.
+        images: List of image URLs or base64 data URIs (e.g., "data:image/png;base64,...").
+    """
+    from langchain_core.messages import SystemMessage
+
     trimmed_history = _trim_chat_history(chat_history)
-    messages = _to_langchain_messages(trimmed_history)
+    messages = [SystemMessage(content=PLAIN_CHAT_SYSTEM_PROMPT)]
+    messages.extend(_to_langchain_messages(trimmed_history))
 
-    llm = _get_llm(streaming=True)
-    chain = PLAIN_CHAT_PROMPT | llm
+    # Build multimodal user message if images are provided
+    if images:
+        content_parts: list[dict] = []
+        for image_url in images:
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": image_url},
+            })
+        content_parts.append({"type": "text", "text": question})
+        messages.append(HumanMessage(content=content_parts))
+    else:
+        messages.append(HumanMessage(content=question))
 
-    kwargs: dict = {
-        "chat_history": messages,
-        "question": question,
-    }
+    llm = _get_chat_llm(streaming=True)
+
     config: dict = {}
     langfuse_handler = get_langfuse_handler()
     if langfuse_handler:
         config["callbacks"] = [langfuse_handler]
 
-    async for chunk in chain.astream(kwargs, config=config):
+    async for chunk in llm.astream(messages, config=config):
         token = chunk.content
         if token:
             yield {"type": "token", "content": token}
