@@ -1,0 +1,54 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Environment (contains API keys)
+.env
+*.env.local
+backend/.env
+
+# Runtime data (knowledge bases, uploads, vector indexes, database)
+# These are generated at runtime and should not be committed
+backend/data/db.sqlite3
+backend/data/rag_qa.db
+backend/data/uploads/
+backend/data/faiss_indexes/
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/build/
+frontend/dist/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Docker
+*.log
+
+# Aone Copilot
+.aone_copilot/
+
+# Personal notes (not relevant to project)
+账号.md
+AoneCopilot.md
+司库奇尤单抗注射液说明书.md
+重难点.md
+
+# Test PDF files in root
+*.pdf
+
+# Root-level data directory (legacy)
+/data/

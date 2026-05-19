@@ -1,0 +1,29 @@
+.sidebar {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 16px;
+  overflow-y: auto;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.item {
+  cursor: pointer;
+  border-radius: 8px;
+  transition: background-color 0.2s;
+
+  &:hover {
+    background-color: #f0f5ff;
+  }
+}
+
+.selected {
+  background-color: #e6f4ff !important;
+  border-left: 3px solid #1677ff;
+}
