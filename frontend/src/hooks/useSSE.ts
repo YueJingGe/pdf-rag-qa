@@ -18,6 +18,7 @@ interface SendOptions {
   images?: string[];  // base64 data URIs for multimodal chat
   fileContent?: string;  // extracted text from uploaded file
   fileName?: string;  // original filename
+  webSearch?: boolean;  // enable web search for plain chat
 }
 
 export function useSSE() {
@@ -32,7 +33,7 @@ export function useSSE() {
   const abortRef = useRef<AbortController | null>(null);
 
   const send = useCallback(async (options: SendOptions) => {
-    const { knowledgeBaseId, question, conversationId, useHyde = false, images, fileContent, fileName } = options;
+    const { knowledgeBaseId, question, conversationId, useHyde = false, images, fileContent, fileName, webSearch } = options;
     abortRef.current?.abort();
     const controller = new AbortController();
     abortRef.current = controller;
@@ -59,6 +60,9 @@ export function useSSE() {
       if (fileContent) {
         body.file_content = fileContent;
         body.file_name = fileName;
+      }
+      if (webSearch) {
+        body.web_search = true;
       }
 
       const response = await fetch('/api/chat/stream', {

@@ -30,6 +30,7 @@ import {
   CopyOutlined,
   LoadingOutlined,
   PaperClipOutlined,
+  GlobalOutlined,
 } from "@ant-design/icons";
 import type { MenuProps } from "antd";
 import ReactMarkdown from "react-markdown";
@@ -96,6 +97,7 @@ export default function ChatWindow({
   const [messages, setMessages] = useState<MessageItem[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [useHyde, setUseHyde] = useState(false);
+  const [useWebSearch, setUseWebSearch] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
   const [historyLoading, setHistoryLoading] = useState(false);
   const [conversations, setConversations] = useState<ConversationInfo[]>([]);
@@ -295,6 +297,7 @@ export default function ChatWindow({
       images: imagesToSend.length > 0 ? imagesToSend : undefined,
       fileContent: fileToSend?.content,
       fileName: fileToSend?.filename,
+      webSearch: useWebSearch,
     });
   };
 
@@ -590,6 +593,17 @@ export default function ChatWindow({
             ))}
           </div>
         )}
+        {isPlainChat && (
+          <div className={styles.inputToolbar}>
+            <div
+              className={`${styles.toolbarPill} ${useWebSearch ? styles.toolbarPillActive : ""}`}
+              onClick={() => setUseWebSearch(!useWebSearch)}
+            >
+              <GlobalOutlined />
+              <span>联网搜索</span>
+            </div>
+          </div>
+        )}
         <div className={styles.inputRow}>
           <Input.TextArea
             value={inputValue}
@@ -611,12 +625,14 @@ export default function ChatWindow({
           />
           <div className={styles.inputActions}>
             {isPlainChat && (
-              <div className={styles.fileActions}>
+              <>
                 <Tooltip title="上传文件（PDF/Word/Excel等）">
                   <Button
                     icon={<PaperClipOutlined />}
                     onClick={handleDocSelect}
                     disabled={sse.loading || !!pendingFile}
+                    size="small"
+                    type="text"
                   />
                 </Tooltip>
                 <Tooltip title="上传图片（支持多张）">
@@ -624,12 +640,14 @@ export default function ChatWindow({
                     icon={<PictureOutlined />}
                     onClick={handleImageSelect}
                     disabled={sse.loading}
+                    size="small"
+                    type="text"
                   />
                 </Tooltip>
-              </div>
+              </>
             )}
             {sse.loading ? (
-              <Button icon={<StopOutlined />} onClick={sse.abort} danger>
+              <Button icon={<StopOutlined />} onClick={sse.abort} danger size="small">
                 停止
               </Button>
             ) : (
@@ -638,9 +656,9 @@ export default function ChatWindow({
                 icon={<SendOutlined />}
                 onClick={handleSend}
                 disabled={!inputValue.trim()}
-              >
-                发送
-              </Button>
+                size="small"
+                shape="circle"
+              />
             )}
           </div>
         </div>
