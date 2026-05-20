@@ -27,6 +27,7 @@ class ChatRequest(BaseModel):
     images: list[str] | None = None  # base64 data URIs or image URLs for multimodal chat
     file_content: str | None = None  # extracted text from uploaded file (via /upload-file)
     file_name: str | None = None  # original filename for display
+    web_search: bool = False  # enable web search for plain chat
 
 
 class ConversationResponse(BaseModel):
@@ -88,9 +89,12 @@ async def chat_stream(req: ChatRequest, db: AsyncSession = Depends(get_db)):
         })}
 
         if is_plain_chat:
-            # Plain chat mode: GLM-4V-Flash (free multimodal) 直接调用 LLM 不走 RAG 检索链
+            # Plain chat mode: routes to GLM-4V-Flash (multimodal) or glm-4-flash-250414 (text+web_search)
+            import logging
+            logging.getLogger("app").info(f"[CHAT] web_search={req.web_search}, images={bool(req.images)}")
             async for chunk in plain_chat_stream(
-                req.question, chat_history, images=req.images, file_content=req.file_content
+                req.question, chat_history, images=req.images,
+                file_content=req.file_content, web_search=req.web_search,
             ):
                 if chunk["type"] == "token":
                     full_answer += chunk["content"]

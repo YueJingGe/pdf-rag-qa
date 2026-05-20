@@ -446,20 +446,18 @@ async def rag_stream(
     yield {"type": "done", "content": full_answer}
 
 
-# ======================== Plain Chat (GLM-4V-Flash - Free Multimodal from Zhipu AI) ========================
+# ======================== Plain Chat (Zhipu AI Free Models) ========================
 
 PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE = """你是一个智能AI助手，请用简洁、准确、友好的方式回答用户问题。
 当前时间：{current_time}
 使用Markdown格式化回复：标题分隔主题、列表展示要点、**加粗**关键信息。
 如果用户发送了图片，请仔细观察图片内容并结合用户问题进行回答。
-如果用户上传了文件，请仔细阅读文件内容并结合用户问题进行准确回答。
-对于天气等实时信息，请告知用户你无法获取实时数据，建议查询天气应用。"""
+如果用户上传了文件，请仔细阅读文件内容并结合用户问题进行准确回答。"""
 
 
 def _get_chat_llm(streaming: bool = False) -> ChatOpenAI:
-    """Get GLM-4V-Flash LLM instance for plain chat (free multimodal from Zhipu AI)."""
+    """Get GLM-4V-Flash LLM instance for multimodal chat (images/files)."""
     if not settings.chat_api_key:
-        # Fallback to DeepSeek if chat model is not configured
         logger.warning("CHAT_API_KEY not configured, falling back to DeepSeek for plain chat")
         return _get_llm(streaming=streaming)
     return ChatOpenAI(
@@ -472,25 +470,101 @@ def _get_chat_llm(streaming: bool = False) -> ChatOpenAI:
     )
 
 
+async def _web_search_chat_stream(
+    question: str,
+    chat_history: list[dict] | None = None,
+    file_content: str | None = None,
+) -> AsyncIterator[dict]:
+    """Streaming chat with web_search tool via Zhipu native API (GLM-4-Flash-250414)."""
+    import httpx
+    from datetime import datetime
+
+    _weekdays = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日']
+    _now = datetime.now()
+    current_time = f"{_now.year}年{_now.month}月{_now.day}日 {_weekdays[_now.weekday()]} {_now.strftime('%H:%M')}"
+    system_prompt = PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE.format(current_time=current_time)
+
+    # 联网搜索时不传历史对话：历史中可能含"无法获取天气"等回答，
+    # 会干扰模型决策导致直接复用历史答案而忽略 web_search 工具
+    messages = [{"role": "system", "content": system_prompt}]
+
+    user_text = question
+    if file_content:
+        user_text = f"以下是用户上传的文件内容：\n\n{file_content}\n\n用户问题：{question}"
+    messages.append({"role": "user", "content": user_text})
+
+    url = f"{settings.chat_base_url.rstrip('/')}/chat/completions"
+    headers = {
+        "Authorization": f"Bearer {settings.chat_api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "model": settings.chat_text_model,
+        "messages": messages,
+        "stream": True,
+        "max_tokens": 4096,
+        "temperature": 0.7,
+        "tools": [{"type": "web_search", "web_search": {
+            "enable": True,
+            "search_engine": "search_pro", # 增强搜索引擎
+            "search_result": True,  # 强制返回搜索结果
+            "search_query": question,
+        }}],
+    }
+
+    async with httpx.AsyncClient(timeout=120.0) as client:
+        async with client.stream("POST", url, headers=headers, json=payload) as resp:
+            if resp.status_code != 200:
+                error_text = await resp.aread()
+                logger.error(f"Zhipu web_search chat failed: {error_text.decode()}")
+                yield {"type": "token", "content": f"联网搜索请求失败: {resp.status_code}"}
+                yield {"type": "done", "content": ""}
+                return
+
+            import json as json_mod
+            async for line in resp.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                data_str = line[5:].strip()
+                if data_str == "[DONE]":
+                    break
+                try:
+                    chunk = json_mod.loads(data_str)
+                    delta = chunk.get("choices", [{}])[0].get("delta", {})
+                    token = delta.get("content", "")
+                    if token:
+                        yield {"type": "token", "content": token}
+                except (json_mod.JSONDecodeError, IndexError, KeyError):
+                    continue
+
+    yield {"type": "done", "content": ""}
+
+
 async def plain_chat_stream(
     question: str,
     chat_history: list[dict] | None = None,
     images: list[str] | None = None,
     file_content: str | None = None,
+    web_search: bool = False,
 ) -> AsyncIterator[dict]:
-    """Streaming plain chat using GLM-4V-Flash (free multimodal from Zhipu AI).
-
-    Args:
-        question: User's text question.
-        chat_history: Previous conversation messages.
-        images: List of image URLs or base64 data URIs.
-        file_content: Extracted text from uploaded file (via Zhipu file-extract API).
+    """Streaming plain chat. Routes to appropriate model:
+    - Images present → GLM-4V-Flash (multimodal)
+    - web_search=True → GLM-4-Flash-250414 with web_search tool (native API)
+    - Otherwise → GLM-4-Flash-250414 via LangChain
     """
     from langchain_core.messages import SystemMessage
+    from datetime import datetime
+
+    # Route: web search (no images) → native Zhipu API with web_search tool
+    if web_search and not images:
+        async for chunk in _web_search_chat_stream(question, chat_history, file_content):
+            yield chunk
+        return
 
     trimmed_history = _trim_chat_history(chat_history)
-    from datetime import datetime
-    current_time = datetime.now().strftime("%Y年%m月%d日 %A %H:%M")
+    _weekdays = ['星期一','星期二','星期三','星期四','星期五','星期六','星期日']
+    _now = datetime.now()
+    current_time = f"{_now.year}年{_now.month}月{_now.day}日 {_weekdays[_now.weekday()]} {_now.strftime('%H:%M')}"
     system_prompt = PLAIN_CHAT_SYSTEM_PROMPT_TEMPLATE.format(current_time=current_time)
     messages = [SystemMessage(content=system_prompt)]
     messages.extend(_to_langchain_messages(trimmed_history))
@@ -500,7 +574,7 @@ async def plain_chat_stream(
     if file_content:
         user_text = f"以下是用户上传的文件内容：\n\n{file_content}\n\n用户问题：{question}"
 
-    # Build multimodal user message if images are provided
+    # Route: images present → GLM-4V-Flash (multimodal)
     if images:
         content_parts: list[dict] = []
         for image_url in images:
@@ -510,10 +584,18 @@ async def plain_chat_stream(
             })
         content_parts.append({"type": "text", "text": user_text})
         messages.append(HumanMessage(content=content_parts))
+        llm = _get_chat_llm(streaming=True)
     else:
+        # Pure text without web search → GLM-4-Flash-250414 via LangChain
         messages.append(HumanMessage(content=user_text))
-
-    llm = _get_chat_llm(streaming=True)
+        llm = ChatOpenAI(
+            model=settings.chat_text_model,
+            openai_api_key=settings.chat_api_key,
+            openai_api_base=settings.chat_base_url,
+            temperature=0.7,
+            max_tokens=4096,
+            streaming=True,
+        )
 
     config: dict = {}
     langfuse_handler = get_langfuse_handler()

@@ -10,10 +10,11 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com/v1"
     deepseek_model: str = "deepseek-chat"
 
-    # LLM (Plain Chat - GLM-4V-Flash, free multimodal from Zhipu AI)
+    # LLM (Plain Chat - Zhipu AI free models)
     chat_api_key: str = ""
     chat_base_url: str = "https://open.bigmodel.cn/api/paas/v4"
-    chat_model: str = "glm-4v-flash"
+    chat_model: str = "glm-4v-flash"  # multimodal (images)
+    chat_text_model: str = "glm-4-flash-250414"  # text-only with web_search support
 
     # Embedding
     embedding_provider: str = "dashscope"  # "dashscope" or "huggingface"
